@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Stamp Rally Prototype</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #050510;
+            --card-bg: #121225;
+            --accent-cyan: #00f2ff;
+            --accent-pink: #ff007f;
+            --text-color: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header { text-align: center; margin-bottom: 30px; width: 100%; }
+        h1 { font-size: 1.5rem; letter-spacing: 2px; margin: 0; color: #fff; }
+        .subtitle { font-size: 0.8rem; color: var(--accent-cyan); font-weight: bold; }
+
+        /* Bento Grid Style */
+        .stamp-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .stamp-card {
+            background: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 24px;
+            aspect-ratio: 1/1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        .stamp-card.active {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 25px rgba(0, 242, 255, 0.25);
+            background: rgba(0, 242, 255, 0.05);
+        }
+
+        /* Thumbnail / Icon styling */
+        .stamp-icon-wrapper {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            filter: grayscale(1) opacity(0.2);
+            transition: all 0.5s ease;
+            margin-bottom: 12px;
+        }
+
+        .active .stamp-icon-wrapper {
+            filter: grayscale(0) opacity(1);
+            transform: scale(1.1);
+        }
+
+        .stamp-icon-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .stamp-icon-wrapper span {
+            font-size: 48px;
+        }
+
+        .company-name {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .active .company-name { color: var(--accent-cyan); }
+
+        /* Stamp Mark Animation */
+        .stamp-mark {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #050510;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.3s ease;
+        }
+
+        .active .stamp-mark {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Scanner Button */
+        #scan-btn {
+            position: fixed;
+            bottom: 40px;
+            background: linear-gradient(135deg, var(--accent-cyan), #00a2ff);
+            color: #050510;
+            border: none;
+            padding: 16px 48px;
+            border-radius: 50px;
+            font-weight: 800;
+            font-size: 1.1rem;
+            box-shadow: 0 10px 30px rgba(0, 242, 255, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+        }
+
+        /* Overlay for Scanner */
+        #scanner-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 100;
+        }
+
+        #video-preview { width: 100%; height: 100%; object-fit: cover; }
+
+        .scanner-guide {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px; height: 250px;
+            border: 2px solid var(--accent-cyan);
+            border-radius: 20px;
+            box-shadow: 0 0 0 4000px rgba(0,0,0,0.5);
+        }
+
+        .close-scanner {
+            position: absolute;
+            bottom: 50px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255,255,255,0.2);
+            color: white; border: none; padding: 15px 30px; border-radius: 30px;
+            font-weight: bold;
+        }
+
+        /* Result Area */
+        #reward-section {
+            display: none;
+            width: 100%;
+            max-width: 400px;
+            margin-top: 30px;
+            padding: 30px;
+            background: linear-gradient(135deg, rgba(255,0,127,0.15), rgba(0,242,255,0.15));
+            border-radius: 24px;
+            border: 2px dashed var(--accent-pink);
+            text-align: center;
+            animation: fadeIn 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .redeem-btn {
+            background: var(--accent-pink);
+            color: white; border: none; padding: 14px 35px;
+            border-radius: 12px; font-weight: 800; margin-top: 20px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 0, 127, 0.3);
+        }
+
+        .redeemed-status {
+            color: var(--accent-pink);
+            font-weight: 800;
+            font-size: 1.4rem;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="subtitle">4-COMPANY JOINT EXHIBITION</div>
+    <h1>STAMP RALLY</h1>
+</header>
+
+<div class="stamp-grid" id="main-grid">
+    <!-- JSで動的に生成されます -->
+</div>
+
+<div id="reward-section">
+    <h3 style="color: #fff; margin-bottom: 10px;">🎊 MISSION COMPLETE</h3>
+    <p style="font-size: 0.9rem;">全てのスタンプが集まりました！<br>窓口でこの画面を提示して、限定ノベルティを受け取ってください。</p>
+    <div id="staff-action-area">
+        <button class="redeem-btn" onclick="redeemPrize()">スタッフが確認して交換</button>
+    </div>
+</div>
+
+<button id="scan-btn" onclick="openScanner()">
+    <span>📷</span> QRスキャン
+</button>
+
+<div id="scanner-overlay">
+    <video id="video-preview"></video>
+    <div class="scanner-guide"></div>
+    <button class="close-scanner" onclick="closeScanner()">キャンセル</button>
+</div>
+
+<script>
+    // ==========================================
+    // 1. 各社の設定（ここを自由に書き換えてください）
+    // ==========================================
+    const COMPANIES = [
+        {
+            id: 'comp_brushup', // QRコードのURLに含めるID (?id=comp_a)
+            name: 'Brushup',
+            icon: '🏢', // 絵文字、または画像のURL ('https://example.com/logo.png')
+            type: 'emoji' // 'emoji' または 'image'
+        },
+        {
+            id: 'comp_beyond',
+            name: 'Beyond',
+            icon: '🚀',
+            type: 'emoji'
+        },
+        {
+            id: 'comp_c',
+            name: 'Company C',
+            icon: '💡',
+            type: 'emoji'
+        },
+        {
+            id: 'comp_d',
+            name: 'Company D',
+            icon: '🛠️',
+            type: 'emoji'
+        }
+    ];
+
+    // --- APP STATE ---
+    let state = {
+        stamps: [], // 取得済みのIDリスト
+        isRedeemed: false
+    };
+
+    // --- INITIALIZATION ---
+    window.onload = () => {
+        setupGrid();
+        loadState();
+        checkUrlParams(); 
+        render();
+    };
+
+    // グリッドのHTML生成
+    function setupGrid() {
+        const grid = document.getElementById('main-grid');
+        grid.innerHTML = COMPANIES.map(c => `
+            <div class="stamp-card" id="stamp-${c.id}">
+                <div class="stamp-mark">✓</div>
+                <div class="stamp-icon-wrapper">
+                    ${c.type === 'emoji' ? `<span>${c.icon}</span>` : `<img src="${c.icon}" alt="${c.name}">`}
+                </div>
+                <div class="company-name">${c.name}</div>
+            </div>
+        `).join('');
+    }
+
+    function loadState() {
+        const saved = localStorage.getItem('stamp_rally_data_v2');
+        if (saved) {
+            state = JSON.parse(saved);
+        }
+    }
+
+    function saveState() {
+        localStorage.setItem('stamp_rally_data_v2', JSON.stringify(state));
+    }
+
+    // --- URL PARAMS (Simulate scan / Direct access) ---
+    function checkUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const stampId = params.get('id'); // URLの末尾に ?id=comp_a などがある場合
+        if (stampId && COMPANIES.find(c => c.id === stampId)) {
+            addStamp(stampId);
+            // URLからパラメータを消してスッキリさせる
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+
+    // --- ACTIONS ---
+    function addStamp(id) {
+        if (!state.stamps.includes(id)) {
+            state.stamps.push(id);
+            saveState();
+            render();
+            if (state.stamps.length === COMPANIES.length) {
+                triggerCompletion();
+            }
+        }
+    }
+
+    function redeemPrize() {
+        if (confirm('【スタッフ専用確認】\n景品を渡しましたか？ボタンを押すと消し込みが行われます。')) {
+            state.isRedeemed = true;
+            saveState();
+            render();
+        }
+    }
+
+    function triggerCompletion() {
+        confetti({
+            particleCount: 200,
+            spread: 80,
+            origin: { y: 0.7 },
+            colors: ['#00f2ff', '#ff007f', '#ffffff']
+        });
+        // 軽いバイブレーション（Android/一部のブラウザのみ）
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    }
+
+    // --- RENDER ---
+    function render() {
+        COMPANIES.forEach(c => {
+            const el = document.getElementById(`stamp-${c.id}`);
+            if (state.stamps.includes(c.id)) {
+                el.classList.add('active');
+            }
+        });
+
+        const rewardSection = document.getElementById('reward-section');
+        const scanBtn = document.getElementById('scan-btn');
+
+        if (state.stamps.length === COMPANIES.length) {
+            rewardSection.style.display = 'block';
+            scanBtn.style.display = 'none';
+
+            if (state.isRedeemed) {
+                document.getElementById('staff-action-area').innerHTML = '<div class="redeemed-status">✅ 交換済み</div>';
+            }
+        }
+    }
+
+    // --- CAMERA SCANNER LOGIC ---
+    let videoStream = null;
+
+    async function openScanner() {
+        const overlay = document.getElementById('scanner-overlay');
+        const video = document.getElementById('video-preview');
+        overlay.style.display = 'block';
+
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            video.srcObject = videoStream;
+            video.setAttribute("playsinline", true);
+            video.play();
+            requestAnimationFrame(tick);
+        } catch (err) {
+            alert("カメラの利用が許可されていないか、対応していません。設定を確認してください。");
+            closeScanner();
+        }
+    }
+
+    function closeScanner() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+        }
+        document.getElementById('scanner-overlay').style.display = 'none';
+    }
+
+    function tick() {
+        const video = document.getElementById('video-preview');
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            const canvas = document.createElement("canvas");
+            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+            if (code) {
+                console.log("QR Code detected:", code.data);
+                // URLからIDを取得
+                try {
+                    const url = new URL(code.data);
+                    const stampId = url.searchParams.get('id');
+                    if (stampId && COMPANIES.find(c => c.id === stampId)) {
+                        addStamp(stampId);
+                        closeScanner();
+                        return;
+                    }
+                } catch (e) {
+                    // Not a valid URL
+                }
+            }
+        }
+        if (document.getElementById('scanner-overlay').style.display === 'block') {
+            requestAnimationFrame(tick);
+        }
+    }
+</script>
+</body>
+</html>
